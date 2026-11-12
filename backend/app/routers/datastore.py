@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.schemas import ActionResult, EntryPayload, PageResult
+from app.security.dependencies import current_principal
+from app.security.store import User
 from app.services.datastore import DatastoreService
 
 router = APIRouter(prefix="/api/datastore", tags=["数据集管理"])
@@ -40,9 +42,15 @@ def get_entry(entry_id: int) -> dict:
 
 
 @router.post("", response_model=ActionResult)
-def create_entry(payload: EntryPayload) -> ActionResult:
-    """登记一条数据集定义，缺字段时说明原因而不是静默丢弃。"""
-    entry, missing = service.create_entry(payload.values)
+def create_entry(
+    payload: EntryPayload, principal: User = Depends(current_principal)
+) -> ActionResult:
+    """登记一条数据集定义。
+
+    必须携带有效令牌，并在 values 中提交「受控连接编号」；
+    安全子系统会校验该身份对连接 + 数据集的授权，越权提交返回 403。
+    """
+    entry, missing = service.create_entry(payload.values, principal)
     if missing:
         return ActionResult(ok=False, message=f"缺少必填字段：{'、'.join(missing)}")
     return ActionResult(ok=True, message="数据集定义已登记", entry=entry)
